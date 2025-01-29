@@ -72,7 +72,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://doc-chat-ai-xbde.vercel.app",  
+        "https://doc-chat-ai-xbde-git-main-savan-rathods-projects.vercel.app",  
     ],
     allow_credentials=True,
     allow_methods=["*"],
