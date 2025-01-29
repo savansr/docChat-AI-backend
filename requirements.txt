@@ -1,4 +1,4 @@
-streamlit
+
 langchain
 langchain-community
 langchain-core
@@ -11,6 +11,7 @@ langchain-huggingface
 fastapi
 uvicorn
 python-multipart
-pinecone-client
+pinecone-plugin-inference
+pinecone-client>=3.0.0
 PyPDF2>=3.0.0
-langchain-pinecone
+   
