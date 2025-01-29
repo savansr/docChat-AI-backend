@@ -72,8 +72,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://https://doc-chat-ai-one.vercel.app",  # Production frontend URL
-        "http://localhost:5173"  # Local development
+        "https://doc-chat-ai-xbde.vercel.app/",  
     ],
     allow_credentials=True,
     allow_methods=["*"],
