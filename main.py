@@ -5,7 +5,6 @@ from typing import List, Dict
 import os
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
-
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -13,39 +12,59 @@ from langchain_groq import ChatGroq
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import PyPDFLoaderI
+from langchain_community.document_loaders import PyPDFLoader
 import shutil
 from uuid import uuid4
-from io import BytesIO 
-from pinecone import Pinecone, ServerlessSpec
-from dotenv import load_dotenv
+from io import BytesIO
 import time  # Add this import
 from PyPDF2 import PdfReader  # Add this import
 from langchain_community.document_loaders.base import BaseBlobParser
 from langchain_core.documents import Document
-from langchain_community.vectorstores import Pinecone as LangchainPinecone  # Rename to avoid confusion
+from pinecone import Pinecone, ServerlessSpec  # Update import
+from langchain_community.vectorstores import Pinecone as LangchainPinecone
+from dotenv import load_dotenv
+
 load_dotenv()
 
-# Initialize Pinecone
+# Define constants
 index_name = 'docchat-index'
+
+# Initialize Pinecone
 pc = Pinecone(
-    api_key=os.environ.get("PINECONE_API_KEY")
+    api_key=os.environ["PINECONE_API_KEY"]
 )
 
-# Create index if it doesn't exist
-if not pc.list_indexes().names():
-    pc.create_index(
-        name=index_name, 
-        dimension=384,  # Dimension for all-MiniLM-L6-v2
-        metric="cosine",
-        spec=ServerlessSpec(
-            cloud='aws', 
-            region='us-east-1'
+# Create or get index
+try:
+    # Check if index exists
+    if index_name not in pc.list_indexes().names():
+        # Create index if it doesn't exist
+        pc.create_index(
+            name=index_name,
+            dimension=384,
+            metric='cosine',
+            spec=ServerlessSpec(
+                cloud='aws',
+                region='us-east-1'
+            )
         )
-    )
-    # Wait for index to be ready
-    while not pc.describe_index(index_name).status['ready']:
-        time.sleep(1)
+        print(f"Created new index: {index_name}")
+    else:
+        print(f"Found existing index: {index_name}")
+
+    # Get the index
+    index = pc.Index(index_name)
+    print(f"Successfully connected to index: {index_name}")
+except Exception as e:
+    print(f"Error with Pinecone setup: {str(e)}")
+    raise e
+
+# Initialize global variables
+sessions: Dict[str, ChatMessageHistory] = {}
+vectorstores: Dict[str, LangchainPinecone] = {}
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+api_key = os.getenv("GROQ_API_KEY")
+llm = ChatGroq(groq_api_key=api_key, model_name="Gemma2-9b-It")
 
 app = FastAPI()
 
@@ -60,13 +79,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Initialize global variables
-sessions: Dict[str, ChatMessageHistory] = {}
-vectorstores: Dict[str, LangchainPinecone] = {}  # Use renamed class
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-api_key = os.getenv("GROQ_API_KEY")
-llm = ChatGroq(groq_api_key=api_key, model_name="Gemma2-9b-It")
 
 class ChatRequest(BaseModel):
     message: str
@@ -105,7 +117,7 @@ class BytesIOPDFLoader:
 @app.post("/upload")
 async def upload_files(
     files: List[UploadFile] = File(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
 ):
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id is required")
@@ -224,7 +236,7 @@ async def chat(request: ChatRequest):
 @app.delete("/session/{session_id}")
 async def cleanup_session(session_id: str):
     # Only cleanup session history
-    if session_id in sessions:
+    if session_id in sessions: 
         del sessions[session_id]
     if session_id in vectorstores:
         del vectorstores[session_id]
@@ -234,13 +246,3 @@ async def cleanup_session(session_id: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
-
-
-
-
-
-
-
-
-
-
