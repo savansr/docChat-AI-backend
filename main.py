@@ -71,12 +71,10 @@ app = FastAPI()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://doc-chat-ai-xbde-git-main-savan-rathods-projects.vercel.app",  
-    ],
+    allow_origins=["https://doc-chat-ai-xbde-git-main-savan-rathods-projects.vercel.app"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # You can also limit the methods, e.g., ["GET", "POST"]
+    allow_headers=["*"],  # Allows all headers
 )
 
 class ChatRequest(BaseModel):
