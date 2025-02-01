@@ -16,11 +16,11 @@ from langchain_community.document_loaders import PyPDFLoader
 import shutil
 from uuid import uuid4
 from io import BytesIO
-import time  # Add this import
-from PyPDF2 import PdfReader  # Add this import
+import time
+from PyPDF2 import PdfReader
 from langchain_community.document_loaders.base import BaseBlobParser
 from langchain_core.documents import Document
-from pinecone import Pinecone, ServerlessSpec  # Update import
+from pinecone import Pinecone, ServerlessSpec
 from langchain_community.vectorstores import Pinecone as LangchainPinecone
 from dotenv import load_dotenv
 
@@ -71,11 +71,14 @@ app = FastAPI()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://doc-chat-ai-dgsp.vercel.app"],
+    allow_origins=["https://doc-chat-ai-dgsp.vercel.app","http://localhost:5173" ],
     allow_credentials=True,
-    allow_methods=["*"],  # You can also limit the methods, e.g., ["GET", "POST"]
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
+MAX_SESSIONS = 100  # Limit number of active sessions
+MAX_HISTORY_LENGTH = 100  # Limit chat history length
 
 class ChatRequest(BaseModel):
     message: str
@@ -83,6 +86,8 @@ class ChatRequest(BaseModel):
 
 @app.post("/start-session")
 async def start_session():
+    if len(sessions) >= MAX_SESSIONS:
+        raise HTTPException(status_code=400, detail="Max session limit reached")
     session_id = str(uuid4())
     sessions[session_id] = ChatMessageHistory()
     return {"session_id": session_id}
@@ -110,7 +115,12 @@ class BytesIOPDFLoader:
                 
         return documents
 
-# Update the upload endpoint
+async def process_pdf(uploaded_file):
+    content = await uploaded_file.read()
+    pdf_file = BytesIO(content)
+    loader = BytesIOPDFLoader(pdf_file)
+    return loader.load()
+
 @app.post("/upload")
 async def upload_files(
     files: List[UploadFile] = File(...),
@@ -124,13 +134,8 @@ async def upload_files(
         
         for uploaded_file in files:
             try:
-                content = await uploaded_file.read()
-                pdf_file = BytesIO(content)
-                
-                loader = BytesIOPDFLoader(pdf_file)
-                docs = loader.load()
+                docs = await process_pdf(uploaded_file)
                 documents.extend(docs)
-                
             except Exception as file_error:
                 print(f"Error processing file {uploaded_file.filename}: {str(file_error)}")
                 raise HTTPException(status_code=400, detail=f"Error processing file: {str(file_error)}")
@@ -141,6 +146,7 @@ async def upload_files(
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=5000, chunk_overlap=500)
         splits = text_splitter.split_documents(documents)
         
+        # Store document embeddings in Pinecone
         vectorstores[session_id] = LangchainPinecone.from_documents(
             documents=splits,
             embedding=embeddings,
@@ -229,17 +235,17 @@ async def chat(request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Add cleanup endpoint
 @app.delete("/session/{session_id}")
 async def cleanup_session(session_id: str):
-    # Only cleanup session history
-    if session_id in sessions: 
+    # Clear sessions and vector stores to free memory
+    if session_id in sessions:
         del sessions[session_id]
     if session_id in vectorstores:
+        vectorstores[session_id].delete_all()  # Delete all vectors from the vector store
         del vectorstores[session_id]
     
     return {"message": "Session cleaned up successfully"}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8001, workers=4)  # Run with multiple workers
