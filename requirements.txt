@@ -11,7 +11,6 @@ langchain-huggingface
 fastapi
 uvicorn
 python-multipart
-pinecone-plugin-inference
 pinecone>=3.0.0
 PyPDF2>=3.0.0
    
